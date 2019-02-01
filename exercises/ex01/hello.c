@@ -23,7 +23,11 @@ int mult(int a, int b) {
 }
 
 int main() {
+    // int x = 5;
     printf("Hello, World!\n");
     printf("%d\n", mult(2,3));
+    // printf("%d\n", x);
+    // int y = x + 1;
+    // printf("%d\n", y);
     return 0;
 }
