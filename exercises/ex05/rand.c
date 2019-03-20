@@ -3,8 +3,35 @@
 Copyright 2016 Allen B. Downey
 License: MIT License https://opensource.org/licenses/MIT
 */
-
+// #include "rand.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+void printb_32(int n) {
+  if (n == 0) {
+    printf("\n");
+    return;
+  }
+  printb_32(n >> 1);
+  if (n & 1) {
+    printf("1");
+  } else {
+    printf("0");
+  }
+}
+
+void printb_64(long n) {
+  if (n == 0) {
+    printf("\n");
+    return;
+  }
+  printb_64(n >> 1);
+  if (n & 1) {
+    printf("1");
+  } else {
+    printf("0");
+  }
+}
 
 // generate a random float using the algorithm described
 // at http://allendowney.com/research/rand
@@ -29,12 +56,10 @@ float my_random_float()
     :"r"(x)
     );
     exp = 126 - exp;
-
     // use the other 23 bits for the mantissa (for small numbers
     // this means we are re-using some bits)
     mant = x >> 8;
     b.i = (exp << 23) | mant;
-
     return b.f;
 }
 
@@ -71,14 +96,40 @@ float my_random_float2()
     // use the remaining bit as the mantissa
     mant = x >> 8;
     b.i = (exp << 23) | mant;
-
     return b.f;
 }
 
 // compute a random double using my algorithm
+// THIS BROUGHT ME SO MUCH pain.
 double my_random_double()
 {
-    // TODO: fill this in
+    long int x, mant, expo, high_exp, low_exp;
+    int bit;
+
+    union {
+        double f;
+        long int i;
+    } ans;
+
+    low_exp = 0x0;
+    high_exp = 0x3ff;
+
+    x = (random() << 32) | random();
+
+    mant = (x >> 11);
+
+    for (expo = high_exp-1; expo>low_exp; expo--) {
+      bit = x & 1;
+      x = x >> 1;
+      if (bit) break;
+    }
+
+    bit = x & 1;
+    x = x >> 1;
+    if (mant == 0 && bit) expo++;
+
+    ans.i = (expo << 52) | mant;
+    return ans.f;
 }
 
 // return a constant (this is a dummy function for time trials)
