@@ -178,8 +178,9 @@ int hash_hashable(Hashable *hashable)
 */
 int equal_int (void *ip, void *jp)
 {
-    // FILL THIS IN!
-    return 0;
+    int i = *(int *) ip;
+    int j = *(int *) jp;
+    return i == j;
 }
 
 
@@ -192,8 +193,7 @@ int equal_int (void *ip, void *jp)
 */
 int equal_string (void *s1, void *s2)
 {
-    // FILL THIS IN!
-    return 0;
+    return (strcmp(s1, s2) == 0);
 }
 
 
@@ -207,8 +207,7 @@ int equal_string (void *s1, void *s2)
 */
 int equal_hashable(Hashable *h1, Hashable *h2)
 {
-    // FILL THIS IN!
-    return 0;
+    return h1->equal (h1->key, h2->key);
 }
 
 
@@ -296,7 +295,12 @@ Node *prepend(Hashable *key, Value *value, Node *rest)
 /* Looks up a key and returns the corresponding value, or NULL */
 Value *list_lookup(Node *list, Hashable *key)
 {
-    // FILL THIS IN!
+    while (list != NULL) {
+      if (equal_hashable(list->key, key)) {
+        return list->value;
+      }
+      list = list->next;
+    }
     return NULL;
 }
 
@@ -341,15 +345,18 @@ void print_map(Map *map)
 /* Adds a key-value pair to a map. */
 void map_add(Map *map, Hashable *key, Value *value)
 {
-    // FILL THIS IN!
+    int bucket = hash_hashable(key) % map->n;
+    Node* list = map->lists[bucket];
+    map->lists[bucket] = prepend(key, value, list);
 }
 
 
 /* Looks up a key and returns the corresponding value, or NULL. */
 Value *map_lookup(Map *map, Hashable *key)
 {
-    // FILL THIS IN!
-    return NULL;
+    int bucket = hash_hashable(key) % map->n;
+    Node* list = map->lists[bucket];
+    return list_lookup(list, key);
 }
 
 
@@ -372,10 +379,12 @@ int main ()
     Value *value1 = make_int_value (17);
     Node *node1 = make_node(hashable1, value1, NULL);
     print_node (node1);
+    puts("________\n");
 
     Value *value2 = make_string_value ("Orange");
     Node *list = prepend(hashable2, value2, node1);
     print_list (list);
+    puts("________\n");
 
     // run some test lookups
     Value *value = list_lookup (list, hashable1);
@@ -386,6 +395,7 @@ int main ()
 
     value = list_lookup (list, hashable3);
     print_lookup(value);
+    puts("________\n");
 
     // make a map
     Map *map = make_map(10);
@@ -394,6 +404,7 @@ int main ()
 
     printf ("Map\n");
     print_map(map);
+    puts("________\n");
 
     // run some test lookups
     value = map_lookup(map, hashable1);
