@@ -9,6 +9,8 @@ License: Creative Commons Attribution-ShareAlike 3.0
 #include <stdlib.h>
 #include <string.h>
 
+const float RESIZE_LOWER_BOUND = 0.25;
+const float RESIZE_UPPER_BOUND = 1;
 
 // VALUE: represents a value in a key-value pair
 
@@ -90,6 +92,7 @@ typedef struct {
     void *key;
     int (*hash) (void *);
     int (*equal) (void *, void *);
+    void (*free_me) (void*);
 } Hashable;
 
 
@@ -104,13 +107,37 @@ typedef struct {
 */
 Hashable *make_hashable(void *key,
     int (*hash) (void *),
-    int (*equal) (void *, void *))
+    int (*equal) (void *, void *),
+    void (*free_me) (void*))
 {
     Hashable *hashable = (Hashable *) malloc (sizeof (Hashable));
     hashable->key = key;
     hashable->hash = hash;
     hashable->equal = equal;
+    hashable->free_me = free_me;
     return hashable;
+}
+
+/* Frees the key of a Hashable object, depending on
+*  whether it is a type that needs to be freed.
+*
+* key: pointer to the key of the Hashable.
+*/
+void free_int(void* key) {
+    free(key);
+}
+
+void free_str(void* key) {
+    return;
+}
+
+/* Frees a Hashable object.
+*
+* hashable: Hashable to be freed.
+*/
+void free_hashable(Hashable* hashable) {
+  hashable->free_me(hashable->key);
+  free(hashable);
 }
 
 
@@ -150,7 +177,7 @@ int hash_string(void *p)
     int i = 0;
 
     while (s[i] != 0) {
-        total += s[i];
+        total += (223 * s[i]) >> 4;
         i++;
     }
     return total;
@@ -223,7 +250,7 @@ Hashable *make_hashable_int (int x)
 {
     int *p = (int *) malloc (sizeof (int));
     *p = x;
-    return make_hashable((void *) p, hash_int, equal_int);
+    return make_hashable((void *) p, hash_int, equal_int, free_int);
 }
 
 
@@ -237,7 +264,7 @@ Hashable *make_hashable_int (int x)
 */
 Hashable *make_hashable_string (char *s)
 {
-    return make_hashable((void *) s, hash_string, equal_string);
+    return make_hashable((void *) s, hash_string, equal_string, free_str);
 }
 
 
@@ -258,6 +285,13 @@ Node *make_node(Hashable *key, Value *value, Node *next)
     node->value = value;
     node->next = next;
     return node;
+}
+
+/* Frees a Node. */
+void free_node(Node* node) {
+  free_hashable(node->key);
+  free(node->value);
+  free(node);
 }
 
 
@@ -309,6 +343,7 @@ Value *list_lookup(Node *list, Hashable *key)
 
 typedef struct map {
     int n;
+    int size;
     Node **lists;
 } Map;
 
@@ -320,11 +355,28 @@ Map *make_map(int n)
 
     Map *map = (Map *) malloc (sizeof (Map));
     map->n = n;
-    map->lists = (Node **) malloc (sizeof (Node *) * n);
+    map->size = 0;
+    map->lists = (Node **) calloc (n, sizeof (Node *));
     for (i=0; i<n; i++) {
         map->lists[i] = NULL;
     }
     return map;
+}
+
+/* Frees a Map. */
+void free_map(Map *map) {
+  Node* curr;
+  Node* next;
+  for (int bucket = 0; bucket < map->n; bucket++) {
+    curr = map->lists[bucket];
+    while (curr != NULL) {
+      next = curr->next;
+      free_node(curr);
+      curr = next;
+    }
+  }
+  free(map->lists);
+  free(map);
 }
 
 
@@ -332,7 +384,7 @@ Map *make_map(int n)
 void print_map(Map *map)
 {
     int i;
-
+    printf ("Map with %d buckets, %d items\n", map->n, map->size);
     for (i=0; i<map->n; i++) {
         if (map->lists[i] != NULL) {
             printf ("%d\n", i);
@@ -342,14 +394,94 @@ void print_map(Map *map)
 }
 
 
-/* Adds a key-value pair to a map. */
-void map_add(Map *map, Hashable *key, Value *value)
+/* Looks up a key and returns the corresponding Node, or NULL */
+Node *get(Map *map, Hashable *key)
 {
     int bucket = hash_hashable(key) % map->n;
     Node* list = map->lists[bucket];
-    map->lists[bucket] = prepend(key, value, list);
+    while (list != NULL) {
+      if (equal_hashable(list->key, key)) {
+        return list;
+      }
+      list = list->next;
+    }
+    return NULL;
 }
 
+
+void map_resize(Map *map, int change) {
+  Node** storage = (Node **) malloc (sizeof (Node *) * map->size);
+  Node* curr;
+  Node* next;
+  int i = 0;
+  int bucket;
+  for (bucket = 0; bucket < map->n; bucket++) {
+    curr = map->lists[bucket];
+    while (curr != NULL) {
+      next = curr->next;
+      curr->next = NULL;
+      storage[i] = curr;
+      curr = next;
+      i++;
+    }
+  }
+  free(map->lists);
+  if (change == 1) {map->n = 2 * map->n;}
+  else {map->n = map->n / 2;}
+  map->lists = (Node **) calloc (map->n, sizeof (Node *));
+  while (i > 0) {
+    i--;
+    curr = storage[i];
+    bucket = hash_hashable(curr->key) % map->n;
+    Node* list = map->lists[bucket];
+    map->lists[bucket] = prepend(curr->key, curr->value, list);
+    free(curr);
+  }
+  free(storage);
+}
+
+/* Adds a key-value pair to a map. */
+void map_add(Map *map, Hashable *key, Value *value)
+{
+    Node* existing = get(map, key);
+    if (existing) {
+      existing->value = value;
+      return;
+    }
+    if ((float) (map->size + 1)/(float) map->n > RESIZE_UPPER_BOUND) {
+      map_resize(map, 1);
+    }
+    int bucket = hash_hashable(key) % map->n;
+    Node* list = map->lists[bucket];
+    map->lists[bucket] = prepend(key, value, list);
+    map->size++;
+}
+
+/* Removes a key-value pair from a map. */
+void map_remove(Map *map, Hashable *key)
+{
+    if (get(map, key) == NULL) return;
+
+    int bucket = hash_hashable(key) % map->n;
+    Node* prev = NULL;
+    Node* curr = map->lists[bucket];
+    while (curr != NULL) {
+      if (equal_hashable(curr->key, key)) {
+        if (prev != NULL) {
+          prev->next = curr->next;
+        } else {
+          map->lists[bucket] = curr->next;
+        }
+        free_node(curr);
+      }
+      prev = curr;
+      curr = curr->next;
+    }
+    map->size--;
+    if ((float) (map->size)/(float) map->n < RESIZE_LOWER_BOUND) {
+      map_resize(map, -1);
+    }
+}
 
 /* Looks up a key and returns the corresponding value, or NULL. */
 Value *map_lookup(Map *map, Hashable *key)
@@ -397,24 +529,49 @@ int main ()
     print_lookup(value);
     puts("________\n");
 
+    free_node(list);
+    free_node(node1);
+    free_hashable(hashable3);
+
     // make a map
-    Map *map = make_map(10);
-    map_add(map, hashable1, value1);
-    map_add(map, hashable2, value2);
+    Map *map = make_map(8);
 
-    printf ("Map\n");
+    // add some ints to it
+    for (int i = 0; i < 10; i++) {
+      map_add(map, make_hashable_int(i), make_int_value(i));
+    }
+
     print_map(map);
+
+    // remove most of them
+    Hashable *h;
+    for (int i = 2; i < 12; i++) {
+      h = make_hashable_int(i);
+      map_remove(map, h);
+      free_hashable(h);
+    }
+
     puts("________\n");
+    print_map(map);
 
-    // run some test lookups
-    value = map_lookup(map, hashable1);
-    print_lookup(value);
+    // add some strs to it
+    char* strs[] = {"banana", "ananab", "aaabnn", "nanaba", "aaaann", "aaaanm"};
+    for (int i = 0; i < 6; i++) {
+      map_add(map, make_hashable_string(strs[i]), make_string_value(strs[i]));
+    }
 
-    value = map_lookup(map, hashable2);
-    print_lookup(value);
+    puts("________\n");
+    print_map(map);
 
-    value = map_lookup(map, hashable3);
-    print_lookup(value);
+    // remove "banana"
+    h = make_hashable_string(strs[0]);
+    map_remove(map, h);
+    free_hashable(h);
+
+    puts("________\n");
+    print_map(map);
+
+    free_map(map);
 
     return 0;
 }
