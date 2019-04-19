@@ -22,6 +22,9 @@ void error(char *msg)
 
 int main(int argc, char *argv[])
 {
+  int status;
+  pid_t pid;
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <search phrase>\n", argv[0]);
         return 1;
@@ -40,12 +43,34 @@ int main(int argc, char *argv[])
     char var[255];
 
     for (int i=0; i<num_feeds; i++) {
-        sprintf(var, "RSS_FEED=%s", feeds[i]);
-        char *vars[] = {var, NULL};
+        pid = fork();
+        // check for an error in fork
+        if (pid == -1) {
+            error("Fork failed.");
+        }
 
-        int res = execle(PYTHON, PYTHON, SCRIPT, search_phrase, NULL, vars);
-        if (res == -1) {
-            error("Can't run script.");
+        if (pid == 0) { // child code
+            sprintf(var, "RSS_FEED=%s", feeds[i]);
+            char *vars[] = {var, NULL};
+
+            int res = execle(PYTHON, PYTHON, SCRIPT, search_phrase, NULL, vars);
+            // check for an error in execle
+            if (res == -1) {
+                error("Can't run script.");
+            }
+            exit(0); // everything is fine
+        }
+    }
+    // parent code
+    for (int i=0; i<num_feeds; i++) {
+        pid = wait(&status);
+        // check for an error in wait
+        if (pid == -1) {
+            error("Wait failed.");
+        }
+        status = WEXITSTATUS(status);
+        if (status) { // if a process did not exit normally
+            printf("Process %d exited unsuccessfully with error code %d.\n", pid, status);
         }
     }
     return 0;
