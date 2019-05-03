@@ -104,7 +104,7 @@ int remove_by_value(Node **list, int val) {
 
     for(; node->next != NULL; node = node->next) {
         if (node->next->val == val) {
-            Node *victim = node->next;
+            Node *victim = node->next; // Woah dramatic
             node->next = victim->next;
             free(victim);
             return 1;
@@ -195,19 +195,38 @@ int main() {
     int res = insert_by_index(&test_list, 9, 8);
     assert(res == -1);
 
-    printf("test_list\n");
+    printf("test_list:  ");
+    print_list(&test_list);
+
+    // empty the list
+    int r = 0;
+    while(pop(&test_list) != -1) r++;
+    printf("%d nodes removed from test_list:  ", r);
     print_list(&test_list);
 
     // make an empty list
-    printf("empty\n");
+    printf("empty:  ");
     Node *empty = NULL;
 
     // add an element to the empty list
     insert_by_index(&empty, 1, 0);
     print_list(&empty);
 
+    // empty the list
+    r = 0;
+    while(pop(&empty) != -1) r++;
+    printf("%d nodes removed from empty:  ", r);
+    print_list(&empty);
+
     Node *something = make_something();
-    free(something);
+    printf("something:  ");
+    print_list(&something);
+
+    // empty the list
+    r = 0;
+    while(pop(&something) != -1) r++;
+    printf("%d nodes removed from something:  ", r);
+    print_list(&something);
 
     return 0;
 }
